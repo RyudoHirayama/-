@@ -1,0 +1,11 @@
+.env
+.token_cache.json
+invoices/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
