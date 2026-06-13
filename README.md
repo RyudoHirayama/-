@@ -16,8 +16,9 @@
 [Outlook 受信トレイ] hirayama@hirayamakeizai.jp
    │ ① Outlook のルールで自動転送
    ▼
-[Gmail] hirayama.ryudo+entresalon@gmail.com（転送専用エイリアス）
+[Gmail] hirayama.ryudo@gmail.com
    │ ② Apps Script が15分おきにチェック
+   │   （題名に「アントレサロン請求書」を含むメールが対象）
    ▼
 [Google ドライブ] 「アントレサロン請求書」フォルダに PDF を保存
 ```
@@ -43,23 +44,25 @@
 
 ### STEP 1. Outlook で自動転送ルールを作る
 
-アントレサロンからの請求書を、Gmail の転送専用エイリアス宛てに自動転送します。
+アントレサロンからの請求書を、Gmail（`hirayama.ryudo@gmail.com`）に自動転送します。
 
 1. Outlook（Web版 outlook.office.com など）の **設定 → メール → ルール** を開く
 2. **「新しいルールを追加」** をクリック
 3. 条件と動作を次のように設定:
    - 名前: `アントレサロン請求書 転送`
    - 条件（差出人）: **`seikyu@gs.entre-salon.com`**
-   - アクション: **転送（Forward）** → 宛先 **`hirayama.ryudo+entresalon@gmail.com`**
+   - アクション: **転送（Forward）** → 宛先 **`hirayama.ryudo@gmail.com`**
 4. 保存
 
-> `+entresalon` は Gmail の「プラスエイリアス」で、特別な設定は不要です。
-> `hirayama.ryudo+entresalon@gmail.com` 宛てのメールは
-> `hirayama.ryudo@gmail.com` の受信トレイにそのまま届き、後段のスクリプトが
-> `deliveredto:` で確実に判別できます。
-
 > ヒント: Outlook の「転送」が件名に `FW:` を付けても問題ありません。
+> 後段のスクリプトは **題名（件名）に「アントレサロン請求書」が含まれるか** で
+> 判定するため、`FW:` が付いていても含まれていればヒットします。
 > 添付PDFはそのまま引き継がれます。
+
+> 注意: スクリプトは「件名にキーワードを含むメール」を対象にするため、
+> 請求書メールの件名に **「アントレサロン請求書」** が入っている必要があります。
+> 実際の件名が異なる場合は、`Code.gs` の `SUBJECT_KEYWORD` を実際の件名に
+> 合わせて変更してください。
 
 ### STEP 2. Apps Script プロジェクトを作る
 
@@ -72,8 +75,7 @@
 
 | 変数 | 値 |
 | --- | --- |
-| `FORWARD_ALIAS` | `hirayama.ryudo+entresalon@gmail.com`（転送先エイリアス） |
-| `ORIGINAL_SENDER` | `seikyu@gs.entre-salon.com`（元の差出人・予備判定用） |
+| `SUBJECT_KEYWORD` | `アントレサロン請求書`（題名にこれを含むメールが対象） |
 | `DRIVE_FOLDER_ID` | 保存先フォルダID（設定済み） |
 
 ### STEP 3. 自動実行を有効にする
@@ -111,8 +113,7 @@
 
 | 変数 | 内容 |
 | --- | --- |
-| `FORWARD_ALIAS` | Outlook からの転送先 Gmail エイリアス |
-| `ORIGINAL_SENDER` | 予備判定に使う元の差出人アドレス |
+| `SUBJECT_KEYWORD` | 題名（件名）に含まれていれば処理対象とするキーワード |
 | `DRIVE_FOLDER_ID` | 保存先フォルダの ID（URL末尾の文字列） |
 | `PROCESSED_LABEL` | 処理済みメールに付ける Gmail ラベル名 |
 | `MAX_THREADS_PER_RUN` | 1回の実行で処理する最大メール数 |

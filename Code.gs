@@ -4,12 +4,12 @@
  *
  * 前提:
  *   アントレサロンの請求書は Outlook (hirayama@hirayamakeizai.jp) に届くため、
- *   Outlook のルールで請求書を Gmail の「転送専用エイリアス」宛てに自動転送します。
+ *   Outlook のルールで請求書を Gmail に自動転送します。
  *   このスクリプトはその転送メールを Gmail 側で拾って処理します。
  *
  * 仕組み:
  *   1. 時間主導型トリガー（例: 15分おき）で saveEntreSalonInvoices() が実行される
- *   2. 転送専用エイリアス宛て、または本文に元差出人を含む未処理メールを Gmail から検索
+ *   2. 「題名（件名）に指定キーワードを含む」未処理メールを Gmail から検索
  *   3. 添付の PDF を指定フォルダに保存
  *   4. 処理済みラベルを付けて、次回以降の重複保存を防止
  *
@@ -18,14 +18,9 @@
 
 // ========= 設定（ここを自分の環境に合わせて変更）=========
 
-// Outlook から請求書を転送する宛先（Gmail の + エイリアス）。
-// Gmail は user+任意文字列@gmail.com を通常の受信トレイに配送し、
-// deliveredto: で確実に検索できるため、転送メールの判別に最適です。
-var FORWARD_ALIAS = 'hirayama.ryudo+entresalon@gmail.com';
-
-// 元の差出人（フォールバック判定用）。
-// 転送メールの本文/ヘッダにこのアドレスが残っている場合にもヒットします。
-var ORIGINAL_SENDER = 'seikyu@gs.entre-salon.com';
+// 判定キーワード。題名（件名）にこの文字列が含まれるメールを処理対象にします。
+// 転送で件名に「FW:」等が付いても、含まれていればヒットします。
+var SUBJECT_KEYWORD = 'アントレサロン請求書';
 
 // 保存先 Google ドライブフォルダの ID。
 // （Claude が作成した「アントレサロン請求書」フォルダの ID が入っています）
@@ -49,10 +44,8 @@ function saveEntreSalonInvoices() {
   var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
   var label = getOrCreateLabel_(PROCESSED_LABEL);
 
-  // 転送専用エイリアス宛て（deliveredto:）を最優先で判定し、
-  // 念のため本文/ヘッダに元差出人を含むメールもOR条件で拾う。
-  var matchQuery = 'deliveredto:' + FORWARD_ALIAS + ' OR "' + ORIGINAL_SENDER + '"';
-  var query = '(' + matchQuery + ') has:attachment filename:pdf -label:"' + PROCESSED_LABEL + '"';
+  // 題名（件名）に指定キーワードを含み、PDF添付のある未処理メールを検索。
+  var query = 'subject:("' + SUBJECT_KEYWORD + '") has:attachment filename:pdf -label:"' + PROCESSED_LABEL + '"';
 
   var threads = GmailApp.search(query, 0, MAX_THREADS_PER_RUN);
   Logger.log('検索ヒット: ' + threads.length + ' スレッド');
