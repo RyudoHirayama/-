@@ -2,23 +2,30 @@
  * アントレサロンからの請求書メールに添付された PDF を
  * Google ドライブの指定フォルダに自動保存するスクリプト。
  *
+ * 前提:
+ *   アントレサロンの請求書は Outlook (hirayama@hirayamakeizai.jp) に届くため、
+ *   Outlook のルールで請求書を Gmail の「転送専用エイリアス」宛てに自動転送します。
+ *   このスクリプトはその転送メールを Gmail 側で拾って処理します。
+ *
  * 仕組み:
  *   1. 時間主導型トリガー（例: 15分おき）で saveEntreSalonInvoices() が実行される
- *   2. 差出人アドレスが一致する未処理メールを Gmail から検索
+ *   2. 転送専用エイリアス宛て、または本文に元差出人を含む未処理メールを Gmail から検索
  *   3. 添付の PDF を指定フォルダに保存
  *   4. 処理済みラベルを付けて、次回以降の重複保存を防止
  *
- * ▼ 初回セットアップ手順は README.md を参照してください。
+ * ▼ 初回セットアップ手順（Outlook の転送設定を含む）は README.md を参照してください。
  */
 
 // ========= 設定（ここを自分の環境に合わせて変更）=========
 
-// アントレサロンの差出人メールアドレス。
-// 完全一致でも、ドメインだけ（例: 'entresalon.co.jp'）でもOK。
-// 複数指定したい場合はカンマ区切りで配列に追加してください。
-var SENDER_ADDRESSES = [
-  'seikyu@gs.entre-salon.com'   // アントレサロンの請求書送信元アドレス
-];
+// Outlook から請求書を転送する宛先（Gmail の + エイリアス）。
+// Gmail は user+任意文字列@gmail.com を通常の受信トレイに配送し、
+// deliveredto: で確実に検索できるため、転送メールの判別に最適です。
+var FORWARD_ALIAS = 'hirayama.ryudo+entresalon@gmail.com';
+
+// 元の差出人（フォールバック判定用）。
+// 転送メールの本文/ヘッダにこのアドレスが残っている場合にもヒットします。
+var ORIGINAL_SENDER = 'seikyu@gs.entre-salon.com';
 
 // 保存先 Google ドライブフォルダの ID。
 // （Claude が作成した「アントレサロン請求書」フォルダの ID が入っています）
@@ -42,13 +49,10 @@ function saveEntreSalonInvoices() {
   var folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
   var label = getOrCreateLabel_(PROCESSED_LABEL);
 
-  // 差出人条件を Gmail 検索クエリに変換。
-  // 例: (from:invoice@entresalon.co.jp) has:attachment filename:pdf -label:"..."
-  var fromQuery = SENDER_ADDRESSES
-    .map(function (addr) { return 'from:' + addr; })
-    .join(' OR ');
-
-  var query = '(' + fromQuery + ') has:attachment filename:pdf -label:"' + PROCESSED_LABEL + '"';
+  // 転送専用エイリアス宛て（deliveredto:）を最優先で判定し、
+  // 念のため本文/ヘッダに元差出人を含むメールもOR条件で拾う。
+  var matchQuery = 'deliveredto:' + FORWARD_ALIAS + ' OR "' + ORIGINAL_SENDER + '"';
+  var query = '(' + matchQuery + ') has:attachment filename:pdf -label:"' + PROCESSED_LABEL + '"';
 
   var threads = GmailApp.search(query, 0, MAX_THREADS_PER_RUN);
   Logger.log('検索ヒット: ' + threads.length + ' スレッド');

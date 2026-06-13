@@ -1,20 +1,32 @@
-# アントレサロン請求書 自動保存
+# アントレサロン請求書 自動保存（Outlook → Gmail → Google ドライブ）
 
-アントレサロンから届く請求書メールの **PDF 添付ファイル** を、
-Google ドライブのフォルダに **自動で保存** する仕組みです。
+アントレサロンから **Outlook（`hirayama@hirayamakeizai.jp`）** に届く請求書メールの
+**PDF 添付ファイル** を、Google ドライブのフォルダに **自動で保存** する仕組みです。
 
 メールが届くたびに手作業でダウンロード→保存する必要がなくなります。
 
 ---
 
-## 仕組みの概要
+## 全体の流れ
 
-1. Google Apps Script が **15分おきに自動実行**（あなたの Google アカウント上で動きます）
-2. アントレサロンの **差出人アドレス** から届いた未処理メールを検索
-3. 添付の **PDF** を Google ドライブの保存先フォルダにコピー
-4. 処理済みのメールには **ラベル** を付けて、同じファイルを二重保存しないようにする
+```
+[アントレサロン]
+   │ 請求書メール（seikyu@gs.entre-salon.com）
+   ▼
+[Outlook 受信トレイ] hirayama@hirayamakeizai.jp
+   │ ① Outlook のルールで自動転送
+   ▼
+[Gmail] hirayama.ryudo+entresalon@gmail.com（転送専用エイリアス）
+   │ ② Apps Script が15分おきにチェック
+   ▼
+[Google ドライブ] 「アントレサロン請求書」フォルダに PDF を保存
+```
 
-> 24時間 Google のサーバー上で動き続けるため、PC やこのツールを開いていなくても自動で処理されます。
+- **①** は Outlook 側の転送ルール（無料・標準機能）
+- **②** は Google Apps Script（あなたの Gmail アカウント上で自動実行）
+
+> Outlook は Gmail を直接読めず、Apps Script は Outlook を直接読めないため、
+> 「Outlook → Gmail への転送」で両者を橋渡しします。
 
 ---
 
@@ -23,40 +35,63 @@ Google ドライブのフォルダに **自動で保存** する仕組みです�
 - 名前: **アントレサロン請求書**（マイドライブ直下）
 - フォルダURL: https://drive.google.com/drive/folders/1Tzjh0B5rcPvn6bmxbWBo480DdsGmwBp7
 
-（このフォルダは作成済みです。別の場所に変えたい場合は下記「設定の変更」を参照）
+（このフォルダは作成済みです）
 
 ---
 
-## 初回セットアップ手順（約5分）
+## セットアップ手順
 
-### 1. Apps Script プロジェクトを作る
-1. ブラウザで <https://script.google.com> を開く
-2. 左上の **「新しいプロジェクト」** をクリック
-3. 既定で開く `コード.gs`（またはエディタ）の中身をすべて削除し、
-   このリポジトリの [`Code.gs`](./Code.gs) の中身を **すべて貼り付け** て保存（Ctrl+S / ⌘+S）
+### STEP 1. Outlook で自動転送ルールを作る
 
-### 2. 差出人アドレス（設定済み）
-アントレサロンの請求書送信元 `seikyu@gs.entre-salon.com` を設定済みです。
-別アドレスからも届く場合は、`Code.gs` 先頭の `SENDER_ADDRESSES` に `,` 区切りで追加できます。
+アントレサロンからの請求書を、Gmail の転送専用エイリアス宛てに自動転送します。
 
-```js
-var SENDER_ADDRESSES = [
-  'seikyu@gs.entre-salon.com'
-];
-```
+1. Outlook（Web版 outlook.office.com など）の **設定 → メール → ルール** を開く
+2. **「新しいルールを追加」** をクリック
+3. 条件と動作を次のように設定:
+   - 名前: `アントレサロン請求書 転送`
+   - 条件（差出人）: **`seikyu@gs.entre-salon.com`**
+   - アクション: **転送（Forward）** → 宛先 **`hirayama.ryudo+entresalon@gmail.com`**
+4. 保存
 
-### 3. 自動実行を有効にする
+> `+entresalon` は Gmail の「プラスエイリアス」で、特別な設定は不要です。
+> `hirayama.ryudo+entresalon@gmail.com` 宛てのメールは
+> `hirayama.ryudo@gmail.com` の受信トレイにそのまま届き、後段のスクリプトが
+> `deliveredto:` で確実に判別できます。
+
+> ヒント: Outlook の「転送」が件名に `FW:` を付けても問題ありません。
+> 添付PDFはそのまま引き継がれます。
+
+### STEP 2. Apps Script プロジェクトを作る
+
+1. ブラウザで <https://script.google.com>（`hirayama.ryudo@gmail.com` でログイン）を開く
+2. **「新しいプロジェクト」** をクリック
+3. エディタの中身をすべて削除し、このリポジトリの [`Code.gs`](./Code.gs) の中身を
+   **すべて貼り付け** て保存（Ctrl+S / ⌘+S）
+
+設定値（`Code.gs` 先頭）は記入済みです。必要に応じて変更してください。
+
+| 変数 | 値 |
+| --- | --- |
+| `FORWARD_ALIAS` | `hirayama.ryudo+entresalon@gmail.com`（転送先エイリアス） |
+| `ORIGINAL_SENDER` | `seikyu@gs.entre-salon.com`（元の差出人・予備判定用） |
+| `DRIVE_FOLDER_ID` | 保存先フォルダID（設定済み） |
+
+### STEP 3. 自動実行を有効にする
+
 1. スクリプトエディタ上部の関数選択メニューで **`createTrigger`** を選ぶ
 2. **「実行」** ボタンを押す
 3. 初回は Google の **権限承認** 画面が出ます → アカウントを選び、
-   「詳細」→「（プロジェクト名）に移動」→「許可」で承認してください
-   （Gmail の読み取りと Drive への保存のために必要です）
-4. これで **15分おきに自動実行** されるようになります
+   「詳細」→「（プロジェクト名）に移動」→「許可」で承認
+   （Gmail の読み取りと Drive への保存に必要です）
+4. これで **15分おきに自動実行** されます
 
-### 4. 動作確認
-- 関数選択メニューで **`saveEntreSalonInvoices`** を選び「実行」すると、その場で手動テストできます
-- 実行後、上記の Google ドライブフォルダに PDF が保存されていれば成功です
-- メニューの「実行数」やログ（表示 → ログ）で結果を確認できます
+### STEP 4. 動作確認
+
+1. アントレサロンの請求書メールを1通、手動で Gmail に転送してテストできます
+   （または Outlook ルール設定後、新しい請求書が届くのを待つ）
+2. 関数選択メニューで **`saveEntreSalonInvoices`** を選び「実行」
+3. 上記の Google ドライブフォルダに PDF が保存されていれば成功です
+   （「表示 → ログ」で処理結果を確認できます）
 
 ---
 
@@ -76,7 +111,8 @@ var SENDER_ADDRESSES = [
 
 | 変数 | 内容 |
 | --- | --- |
-| `SENDER_ADDRESSES` | 判定する差出人アドレス（配列・複数可） |
+| `FORWARD_ALIAS` | Outlook からの転送先 Gmail エイリアス |
+| `ORIGINAL_SENDER` | 予備判定に使う元の差出人アドレス |
 | `DRIVE_FOLDER_ID` | 保存先フォルダの ID（URL末尾の文字列） |
 | `PROCESSED_LABEL` | 処理済みメールに付ける Gmail ラベル名 |
 | `MAX_THREADS_PER_RUN` | 1回の実行で処理する最大メール数 |
@@ -89,9 +125,10 @@ var SENDER_ADDRESSES = [
 ## よくある質問
 
 - **過去のメールも保存される？**
-  はい。条件に一致する未処理メールはすべて対象です。一度に多すぎる場合は
-  `MAX_THREADS_PER_RUN` ずつ処理され、次回実行で続きが処理されます。
+  はい。条件に一致する未処理メールはすべて対象です（転送後に Gmail に届いたもの）。
 - **同じ請求書が二重に保存される？**
   されません。処理済みラベルと同名ファイルのチェックで重複を防ぎます。
+- **転送せず Outlook から直接 Google ドライブに保存したい**
+  その場合は Microsoft Power Automate を使う別方式になります。必要なら相談してください。
 - **PDF 以外の添付（画像など）も保存したい**
   `Code.gs` の `TARGET_EXTENSIONS` に拡張子を追加してください。
