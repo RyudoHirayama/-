@@ -17,7 +17,7 @@
 // 完全一致でも、ドメインだけ（例: 'entresalon.co.jp'）でもOK。
 // 複数指定したい場合はカンマ区切りで配列に追加してください。
 var SENDER_ADDRESSES = [
-  'invoice@entresalon.co.jp'   // ← 実際のアントレサロンの送信元アドレスに書き換えてください
+  'seikyu@gs.entre-salon.com'   // アントレサロンの請求書送信元アドレス
 ];
 
 // 保存先 Google ドライブフォルダの ID。
