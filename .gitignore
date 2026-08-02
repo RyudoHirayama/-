@@ -1,0 +1,6 @@
+node_modules/
+data/db.json
+data/vapid-keys.json
+uploads/*
+!uploads/.gitkeep
+*.log
