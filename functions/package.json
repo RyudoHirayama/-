@@ -1,0 +1,16 @@
+{
+  "name": "functions",
+  "description": "武内製作所 社内トーク - 連絡事項プッシュ通知用Cloud Functions",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.2.0",
+    "firebase-functions": "^7.3.2"
+  }
+}

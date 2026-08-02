@@ -1,6 +1,6 @@
 node_modules/
-data/db.json
-data/vapid-keys.json
-uploads/*
-!uploads/.gitkeep
+functions/node_modules/
+.firebase/
+firebase-debug.log
 *.log
+public/firebase-config.js
