@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isMember(name) {
+      return name in ['社長', '専務', '平山', '辻井', '吉道', '江本'];
+    }
+
+    // チャットメッセージ: 全員が読める。作成は6名分の投稿のみ許可。
+    // 更新は「いいね(likes)」の付け外しのみ許可し、本文や写真の改ざんは禁止。
+    match /messages/{messageId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && isMember(request.resource.data.author)
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.type in ['normal', 'announcement']
+        && request.resource.data.likes == []
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+        && request.resource.data.likes is list
+        && request.resource.data.likes.size() <= 6
+        && request.resource.data.likes.toSet().difference(resource.data.likes.toSet()).size() <= 1
+        && resource.data.likes.toSet().difference(request.resource.data.likes.toSet()).size() <= 1;
+
+      allow delete: if false;
+    }
+
+    // プッシュ通知トークン: 自分のトークンだけ登録・削除できる（社内6名の信頼関係を前提にした簡易ルール）。
+    match /subscriptions/{tokenId} {
+      allow read: if false; // 送信はCloud Functions(Admin SDK)からのみ行う
+      allow create, update: if isSignedIn()
+        && isMember(request.resource.data.user)
+        && request.resource.data.token == tokenId;
+      allow delete: if isSignedIn();
+    }
+  }
+}
