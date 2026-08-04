@@ -1,35 +1,69 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
   collection,
+  doc,
   limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
 } from 'firebase/firestore'
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage'
 import { useAuth } from '../contexts/AuthContext.jsx'
 import { db, storage } from '../firebase'
+import { REPORT_TEMPLATES } from '../templates'
 import MessageItem from './MessageItem.jsx'
+import ChannelBar from './ChannelBar.jsx'
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10MB
+const DEFAULT_CHANNEL_ID = 'general'
 
 export default function Chat() {
   const { user, logout } = useAuth()
+  const [channels, setChannels] = useState([])
+  const [activeChannel, setActiveChannel] = useState(DEFAULT_CHANNEL_ID)
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [showTemplates, setShowTemplates] = useState(false)
   const bottomRef = useRef(null)
   const fileInputRef = useRef(null)
+  const textRef = useRef(null)
 
-  // リアルタイム購読
+  // チャンネル一覧を購読。無ければデフォルト「全体」を作成。
   useEffect(() => {
+    const q = query(collection(db, 'channels'), orderBy('createdAt', 'asc'))
+    const unsub = onSnapshot(q, async (snap) => {
+      if (snap.empty) {
+        await setDoc(doc(db, 'channels', DEFAULT_CHANNEL_ID), {
+          name: '全体',
+          createdBy: user.uid,
+          createdAt: serverTimestamp(),
+        })
+        return
+      }
+      setChannels(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    })
+    return unsub
+  }, [user.uid])
+
+  // アクティブチャンネルが一覧から消えたら先頭にフォールバック
+  useEffect(() => {
+    if (channels.length && !channels.some((c) => c.id === activeChannel)) {
+      setActiveChannel(channels[0].id)
+    }
+  }, [channels, activeChannel])
+
+  // アクティブチャンネルのメッセージを購読
+  useEffect(() => {
+    setMessages([])
     const q = query(
-      collection(db, 'messages'),
+      collection(db, 'channels', activeChannel, 'messages'),
       orderBy('createdAt', 'asc'),
       limit(200),
     )
@@ -37,12 +71,26 @@ export default function Chat() {
       setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     })
     return unsub
-  }, [])
+  }, [activeChannel])
 
   // 新着で最下部へスクロール
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  const activeChannelName = useMemo(
+    () => channels.find((c) => c.id === activeChannel)?.name || '',
+    [channels, activeChannel],
+  )
+
+  const createChannel = async (name) => {
+    const docRef = await addDoc(collection(db, 'channels'), {
+      name,
+      createdBy: user.uid,
+      createdAt: serverTimestamp(),
+    })
+    setActiveChannel(docRef.id)
+  }
 
   const handleFileChange = (e) => {
     const f = e.target.files?.[0]
@@ -67,6 +115,13 @@ export default function Chat() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  const insertTemplate = (tpl) => {
+    setText((prev) => (prev.trim() ? prev + '\n\n' + tpl.body : tpl.body))
+    setShowTemplates(false)
+    // 挿入後にフォーカス
+    requestAnimationFrame(() => textRef.current?.focus())
+  }
+
   const handleSend = async (e) => {
     e.preventDefault()
     if ((!text.trim() && !file) || sending) return
@@ -83,12 +138,13 @@ export default function Chat() {
         imageUrl = await getDownloadURL(storageRef)
       }
 
-      await addDoc(collection(db, 'messages'), {
+      await addDoc(collection(db, 'channels', activeChannel, 'messages'), {
         text: text.trim(),
         imageUrl,
         imagePath,
         uid: user.uid,
         author: user.displayName || user.email || '名無し',
+        reactions: {},
         createdAt: serverTimestamp(),
       })
 
@@ -117,18 +173,51 @@ export default function Chat() {
         </div>
       </header>
 
+      <ChannelBar
+        channels={channels}
+        activeId={activeChannel}
+        onSelect={setActiveChannel}
+        onCreate={createChannel}
+      />
+
       <main className="chat-feed">
         {messages.length === 0 && (
-          <div className="empty">まだ報告がありません。最初の報告を投稿しましょう。</div>
+          <div className="empty">
+            {activeChannelName
+              ? `「${activeChannelName}」にはまだ報告がありません。最初の報告を投稿しましょう。`
+              : 'まだ報告がありません。'}
+          </div>
         )}
         {messages.map((m) => (
-          <MessageItem key={m.id} message={m} mine={m.uid === user.uid} />
+          <MessageItem
+            key={m.id}
+            message={m}
+            mine={m.uid === user.uid}
+            channelId={activeChannel}
+            currentUid={user.uid}
+          />
         ))}
         <div ref={bottomRef} />
       </main>
 
       <form className="composer" onSubmit={handleSend}>
         {error && <div className="error composer-error">{error}</div>}
+
+        {showTemplates && (
+          <div className="template-tray">
+            {REPORT_TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.id}
+                type="button"
+                className="template-chip"
+                onClick={() => insertTemplate(tpl)}
+              >
+                <span>{tpl.emoji}</span> {tpl.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {preview && (
           <div className="attachment-preview">
             <img src={preview} alt="添付プレビュー" />
@@ -137,8 +226,17 @@ export default function Chat() {
             </button>
           </div>
         )}
+
         <div className="composer-row">
-          <label className="attach-btn" title="写真を添付">
+          <button
+            type="button"
+            className={`icon-btn ${showTemplates ? 'active' : ''}`}
+            title="報告テンプレート"
+            onClick={() => setShowTemplates((v) => !v)}
+          >
+            📋
+          </button>
+          <label className="icon-btn" title="写真を添付">
             📷
             <input
               ref={fileInputRef}
@@ -149,6 +247,7 @@ export default function Chat() {
             />
           </label>
           <textarea
+            ref={textRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="報告内容を入力…"
